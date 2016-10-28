@@ -1,7 +1,7 @@
 # Fork of Recorderjs
 
 This is a fork of Chris Rudmin's version of Recorderjs. The project's primarily focus is to add additional features to the library which make it more flexible in specific scenarios (see below).
-For the original documentation just have a look on [https://github.com/chris-rudmin/Recorderjs](Chris Rudmin's extended recorderjs).
+For the original documentation just have a look on https://github.com/chris-rudmin/Recorderjs .
 
 Basically there are two additional parameters for the Recorder constructor:
 
