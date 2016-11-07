@@ -13,6 +13,7 @@ var Recorder = function (config, existingStream, levelMeterCallback) {
     this.config = config = config || {};
     this.config.command = "init";
     this.config.bufferLength = config.bufferLength || 4096;
+    this.config.inputGain = config.inputGain || 1.0;
     this.config.monitorGain = config.monitorGain || 0;
     this.config.numberOfChannels = config.numberOfChannels || 1;
     this.config.originalSampleRate = this.audioContext.sampleRate;
@@ -40,20 +41,31 @@ var Recorder = function (config, existingStream, levelMeterCallback) {
 
     this.state = "inactive";
     this.eventTarget = document.createDocumentFragment();
-    this.monitorNode = this.audioContext.createGain();
-    this.setMonitorGain(this.config.monitorGain);
+
+    // 1. An input gain the we make the very first node after the source node
+    this.inputGain = this.audioContext.createGain();
+    this.setInputGain(this.config.inputGain);
+
+    // 2. (first branch) ScriptProcessor for ogg-opus encoding
     this.scriptProcessorNode = this.audioContext.createScriptProcessor(this.config.bufferLength,
         this.config.numberOfChannels, this.config.numberOfChannels);
     this.scriptProcessorNode.onaudioprocess = function (e) {
         that.encodeBuffers(e.inputBuffer);
     };
 
-    // MOD: Additional node and its helper for analyzing audio input level
+    // 3. (second branch) A monitor gain to listen to myself during recording
+    this.monitorNode = this.audioContext.createGain();
+    this.setMonitorGain(this.config.monitorGain);
+
+    // 4. (third branch) Additional node and its helper for analyzing audio input level
     this.levelMeterCallback = levelMeterCallback;
 
+    // Helper for the level meter
     this.analyser = this.audioContext.createAnalyser();
     this.analyser.smoothingTimeConstant = 0.3;
     this.analyser.fftSize = 1024;
+
+    // ScriptProcessor for the level meter
     this.levelMeterNode = this.audioContext.createScriptProcessor(2048, 1, 1);
     this.levelMeterNode.onaudioprocess = function () {
 
@@ -91,6 +103,13 @@ Recorder.isRecordingSupported = function () {
 
 Recorder.prototype.addEventListener = function (type, listener, useCapture) {
     this.eventTarget.addEventListener(type, listener, useCapture);
+};
+
+// MOD: Set streamPages on and off when required
+Recorder.prototype.enableStreamPages = function (enable) {
+    if(this.state === "inactive") {
+        this.config.streamPages = enable;
+    }
 };
 
 Recorder.prototype.audioContext = new window.AudioContext();
@@ -134,34 +153,41 @@ Recorder.prototype.initStream = function () {
 
     // MOD: Init remaining parts of the passed stream but don't call getUserMedia again
     if (this.streamPassed) {
-        this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
-        this.sourceNode.connect(this.scriptProcessorNode);
-        this.sourceNode.connect(this.monitorNode);
-
-        // NEW
-        this.sourceNode.connect(this.analyser);
-        this.analyser.connect(this.levelMeterNode);
-
+        this.connectAudioGraph(this.stream);
         this.eventTarget.dispatchEvent(new Event("streamReady"));
-
         this.streamPassed = false;
         return;
     }
 
+    // This is now only used when no stream is passed to the constructor
     var that = this;
     navigator.getUserMedia(
         {audio: this.config.streamOptions},
         function (stream) {
             that.stream = stream;
+            that.connectAudioGraph(stream);
+            /*
             that.sourceNode = that.audioContext.createMediaStreamSource(stream);
             that.sourceNode.connect(that.scriptProcessorNode);
             that.sourceNode.connect(that.monitorNode);
+            */
             that.eventTarget.dispatchEvent(new Event("streamReady"));
         },
         function (e) {
             that.eventTarget.dispatchEvent(new ErrorEvent("streamError", {error: e}));
         }
     );
+};
+
+Recorder.prototype.connectAudioGraph = function(stream) {
+    this.sourceNode = this.audioContext.createMediaStreamSource(stream);
+    this.sourceNode.connect(this.inputGain);
+
+    this.inputGain.connect(this.scriptProcessorNode);
+    this.inputGain.connect(this.monitorNode);
+
+    this.inputGain.connect(this.analyser);
+    this.analyser.connect(this.levelMeterNode);
 };
 
 Recorder.prototype.pause = function () {
@@ -184,6 +210,16 @@ Recorder.prototype.resume = function () {
 
 Recorder.prototype.setMonitorGain = function (gain) {
     this.monitorNode.gain.value = gain;
+};
+
+// NEW
+Recorder.prototype.setInputGain = function (gain) {
+    this.inputGain.gain.value = gain;
+};
+
+// NEW
+Recorder.prototype.getInputGain = function () {
+    return this.inputGain.gain.value;
 };
 
 Recorder.prototype.start = function () {
