@@ -1,8 +1,10 @@
-"use strict";
+
 window.AudioContext = window.AudioContext || window.webkitAudioContext;
 navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
 
 var Recorder = function (config, existingStream, levelMeterCallback) {
+
+    "use strict";
 
     var that = this;
 
